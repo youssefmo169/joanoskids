@@ -10,7 +10,7 @@ import { splitList } from '../types';
 import ProductCard from '../components/ProductCard';
 
 const heroImage =
-  'https://images.pexels.com/photos/8474941/pexels-photo-8474941.jpeg?auto=compress&cs=tinysrgb&w=1920';
+  'https://i.postimg.cc/T3DsFRdD/Whats-App-Image-2026-06-07-at-17-51-46.jpg';
 
 const defaultCategoryImages: Record<string, string> = {
   Dresses: 'https://images.pexels.com/photos/3522363/pexels-photo-3522363.jpeg?auto=compress&cs=tinysrgb&w=800',
