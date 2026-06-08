@@ -1,0 +1,653 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Package, ShoppingBag, LogOut, Plus, Pencil, Trash2, X, Check, ArrowLeft, Tags } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import { useLang, type TKey } from '../../contexts/LanguageContext';
+import { supabase } from '../../lib/supabase';
+import type { Product, Order, OrderItem, Category } from '../../types';
+import dashboardBg from '../../assets/admin-dashboard-bg.jpeg';
+
+type Tab = 'orders' | 'products' | 'categories';
+type OrderWithItems = Order & { items: OrderItem[] };
+
+function ensureString(val: unknown): string {
+  if (val == null) return '';
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val)) return val.map(item => ensureString(item).trim()).filter(Boolean).join(', ');
+  return String(val);
+}
+
+function normalizeProduct(raw: Record<string, unknown>): Product {
+  return {
+    ...raw,
+    id: ensureString(raw.id),
+    price: Number(raw.price) || 0,
+    compare_at_price: raw.compare_at_price == null ? null : Number(raw.compare_at_price),
+    sizes: ensureString(raw.sizes),
+    colors: ensureString(raw.colors),
+  } as Product;
+}
+
+function normalizeOrder(raw: Record<string, unknown>, items: OrderItem[] = []): OrderWithItems {
+  return {
+    ...raw,
+    id: ensureString(raw.id),
+    total_price: Number(raw.total_price) || 0,
+    items,
+  } as OrderWithItems;
+}
+
+function normalizeOrderItem(raw: Record<string, unknown>): OrderItem {
+  return {
+    ...raw,
+    id: ensureString(raw.id),
+    order_id: ensureString(raw.order_id),
+    product_id: raw.product_id == null ? null : ensureString(raw.product_id),
+    quantity: Number(raw.quantity) || 0,
+    price: Number(raw.price) || 0,
+  } as OrderItem;
+}
+
+function normalizeCategory(raw: Record<string, unknown>): Category {
+  return {
+    ...raw,
+    id: ensureString(raw.id),
+    image_url: raw.image_url == null ? null : ensureString(raw.image_url),
+  } as Category;
+}
+
+export default function AdminDashboardPage() {
+  const { isAdmin, logout } = useAuth();
+  const navigate = useNavigate();
+  const { t, formatPrice, lang } = useLang();
+  const [tab, setTab] = useState<Tab>('orders');
+  const [orders, setOrders] = useState<OrderWithItems[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isAdmin) navigate('/admin/login', { replace: true });
+  }, [isAdmin, navigate]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (tab === 'orders') fetchOrders();
+    else if (tab === 'products') {
+      fetchProducts();
+      fetchCategories(false);
+    }
+    else fetchCategories();
+  }, [tab, isAdmin]);
+
+  const fetchOrders = async () => {
+    setLoading(true);
+    const { data: orderData, error: ordersError } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+    if (ordersError) {
+      console.error('Failed to fetch orders', ordersError);
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
+    const { data: itemData, error: itemsError } = await supabase.from('order_items').select('*');
+    if (itemsError) {
+      console.error('Failed to fetch order items', itemsError);
+    }
+
+    const normalizedItems = (itemData || []).map(item => normalizeOrderItem(item as Record<string, unknown>));
+    const itemsByOrder = normalizedItems.reduce<Record<string, OrderItem[]>>((acc, item) => {
+        const orderId = String(item.order_id);
+        if (!acc[orderId]) acc[orderId] = [];
+        acc[orderId].push(item);
+        return acc;
+      }, {});
+    setOrders((orderData || []).map(o => normalizeOrder(o as Record<string, unknown>, itemsByOrder[String(o.id)] || [])));
+    setLoading(false);
+  };
+
+  const fetchProducts = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error('Failed to fetch products', error);
+      setProducts([]);
+    } else if (data) {
+      setProducts(data.map(item => normalizeProduct(item as Record<string, unknown>)));
+    }
+    setLoading(false);
+  };
+
+  const fetchCategories = async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
+    const { data, error } = await supabase.from('categories').select('*').order('name_en');
+    if (error) {
+      console.error('Failed to fetch categories', error);
+      setCategories([]);
+    } else if (data) {
+      setCategories(data.map(item => normalizeCategory(item as Record<string, unknown>)));
+    }
+    if (showSpinner) setLoading(false);
+  };
+
+  const updateStatus = async (orderId: string, status: Order['status']) => {
+    const id = String(orderId);
+    const { error } = await supabase.from('orders').update({ status }).eq('id', id);
+    if (error) {
+      console.error('Failed to update order status', { orderId: id, status, error });
+      alert(`Failed to update order status: ${error.message}`);
+      return;
+    }
+    setOrders(prev => prev.map(o => String(o.id) === id ? { ...o, status } : o));
+  };
+
+  const deleteOrder = async (orderId: string) => {
+    if (!confirm(t('deleteOrderConfirm'))) return;
+    const id = String(orderId);
+    try {
+      const { error: itemsError } = await supabase.from('order_items').delete().eq('order_id', id);
+      if (itemsError) {
+        console.error('Failed to delete order_items for order', id, itemsError);
+        alert(`Failed to delete order items: ${itemsError.message}`);
+        return;
+      }
+      const { error: orderError } = await supabase.from('orders').delete().eq('id', id);
+      if (orderError) {
+        console.error('Failed to delete order', id, orderError);
+        alert(`Failed to delete order: ${orderError.message}`);
+        return;
+      }
+      setOrders(prev => prev.filter(o => String(o.id) !== id));
+    } catch (err) {
+      console.error('Unexpected error deleting order', id, err);
+      alert('An unexpected error occurred while deleting the order.');
+    }
+  };
+
+  const deleteProduct = async (id: string) => {
+    if (!confirm(t('deleteProductConfirm'))) return;
+    const productId = String(id);
+    const { error } = await supabase.from('products').delete().eq('id', productId);
+    if (error) { alert(`Failed to delete product: ${error.message}`); return; }
+    setProducts(prev => prev.filter(p => String(p.id) !== productId));
+  };
+
+  const handleLogout = () => { logout(); navigate('/'); };
+
+  if (!isAdmin) return null;
+
+  const tabButtons = [
+    { key: 'orders' as Tab, icon: ShoppingBag, label: t('orders') },
+    { key: 'products' as Tab, icon: Package, label: t('products') },
+    { key: 'categories' as Tab, icon: Tags, label: t('categories') },
+  ];
+
+  return (
+    <div
+      className="min-h-screen bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.78), rgba(255,255,255,0.88)), url(${dashboardBg})` }}
+    >
+      <header className="bg-white/95 backdrop-blur border-b border-neutral-100 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
+          <div className="flex items-center gap-4">
+            <Link to="/" className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-900 transition-colors">
+              <ArrowLeft className="w-4 h-4" /> {t('backToHome')}
+            </Link>
+            <span className="text-neutral-200">|</span>
+            <h1 className="text-lg font-bold text-neutral-900 tracking-tight">
+              <span className="text-pink-500">Jo</span>&<span className="text-sky-500">Anos</span>{' '}
+              <span aria-label="Kids">
+                <span className="text-blue-500">K</span><span className="text-green-500">i</span><span className="text-orange-500">d</span><span className="text-purple-500">s</span>
+              </span>{' '}
+              {t('admin')}
+            </h1>
+            <div className="hidden sm:flex gap-1">
+              {tabButtons.map(btn => (
+                <button key={btn.key} onClick={() => setTab(btn.key)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === btn.key ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100'}`}>
+                  <span className="flex items-center gap-2"><btn.icon className="w-4 h-4" /> {btn.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <button onClick={handleLogout} className="flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 transition-colors">
+            <LogOut className="w-4 h-4" /> {t('logout')}
+          </button>
+        </div>
+        <div className="sm:hidden flex border-t border-neutral-100">
+          {tabButtons.map(btn => (
+            <button key={btn.key} onClick={() => setTab(btn.key)}
+              className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 ${tab === btn.key ? 'text-neutral-900 border-b-2 border-neutral-900' : 'text-neutral-500'}`}>
+              <btn.icon className="w-4 h-4" /> {btn.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {tab === 'orders' && <OrdersTab orders={orders} loading={loading} onUpdateStatus={updateStatus} onDeleteOrder={deleteOrder} formatPrice={formatPrice} t={t} lang={lang} />}
+        {tab === 'products' && <ProductsTab products={products} loading={loading} onDelete={deleteProduct} onRefresh={fetchProducts} formatPrice={formatPrice} t={t} categories={categories} />}
+        {tab === 'categories' && <CategoriesTab categories={categories} loading={loading} onRefresh={fetchCategories} t={t} />}
+      </main>
+    </div>
+  );
+}
+
+function OrdersTab({ orders, loading, onUpdateStatus, onDeleteOrder, formatPrice, t, lang }: {
+  orders: OrderWithItems[];
+  loading: boolean;
+  onUpdateStatus: (id: string, status: Order['status']) => void;
+  onDeleteOrder: (id: string) => void;
+  formatPrice: (price: number) => string;
+  t: (key: TKey) => string;
+  lang: string;
+}) {
+  const statuses: Order['status'][] = ['Pending', 'Shipped', 'Completed'];
+  const statusLabels: Record<string, Record<string, string>> = {
+    Pending: { ar: 'قيد الانتظار', en: 'Pending' },
+    Shipped: { ar: 'تم الشحن', en: 'Shipped' },
+    Completed: { ar: 'مكتمل', en: 'Completed' },
+  };
+
+  if (loading) return <LoadingSkeleton />;
+  if (orders.length === 0) return <div className="text-center py-16"><p className="text-neutral-400">{t('noOrders')}</p></div>;
+
+  return (
+    <div className="space-y-4">
+      {orders.map(order => (
+        <div key={order.id} className="bg-white rounded-xl border border-neutral-100 p-6">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
+            <div>
+              <p className="text-xs text-neutral-400 mb-1">{t('order')} #{String(order.id || '').slice(0, 8).toUpperCase()}</p>
+              <h3 className="text-base font-semibold text-neutral-900">{order.customer_name}</h3>
+              <p className="text-sm text-neutral-500">{order.phone}</p>
+              <p className="text-sm text-neutral-500">{order.address}, {order.city}</p>
+              <p className="text-xs text-neutral-400 mt-1">{new Date(order.created_at).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${order.status === 'Pending' ? 'bg-amber-50 text-amber-700' : order.status === 'Shipped' ? 'bg-blue-50 text-blue-700' : 'bg-green-50 text-green-700'}`}>{statusLabels[order.status]?.[lang] || order.status}</span>
+              <p className="text-lg font-bold text-neutral-900">{formatPrice(order.total_price)}</p>
+            </div>
+          </div>
+          <div className="border-t border-neutral-100 pt-4 mb-4">
+            <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">{t('itemsLabel')}</p>
+            <div className="space-y-1.5">
+              {order.items.map(item => (
+                <div key={item.id} className="flex justify-between text-sm">
+                  <span className="text-neutral-700">{item.product_title} ({item.size}/{item.color}) x{item.quantity}</span>
+                  <span className="text-neutral-900 font-medium">{formatPrice(item.price * item.quantity)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {statuses.map(s => (
+              <button key={s} onClick={() => onUpdateStatus(order.id, s)} disabled={order.status === s}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${order.status === s ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}>{t('mark')} {statusLabels[s]?.[lang] || s}</button>
+            ))}
+            <button onClick={() => onDeleteOrder(order.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-red-50 text-red-600 hover:bg-red-100 flex items-center gap-1">
+              <Trash2 className="w-3 h-3" /> {t('deleteOrder')}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProductsTab({ products, loading, onDelete, onRefresh, formatPrice, t, categories }: {
+  products: Product[];
+  loading: boolean;
+  onDelete: (id: string) => void;
+  onRefresh: () => Promise<void>;
+  formatPrice: (price: number) => string;
+  t: (key: TKey) => string;
+  categories: Category[];
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<Product | null>(null);
+
+  if (loading) return <LoadingSkeleton />;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-bold text-neutral-900">{t('products')} ({products.length})</h2>
+        <button onClick={() => { setEditing(null); setShowForm(true); }}
+          className="flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-neutral-800 transition-colors">
+          <Plus className="w-4 h-4" /> {t('addProduct')}
+        </button>
+      </div>
+
+      {products.length === 0 && !showForm ? (
+        <div className="text-center py-16"><p className="text-neutral-400">{t('noProductsYet')}</p></div>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {products.map(p => {
+            const isOnSale = p.compare_at_price && p.compare_at_price > p.price;
+            return (
+              <div key={p.id} className="bg-white rounded-xl border border-neutral-100 overflow-hidden">
+                <div className="aspect-[3/2] bg-neutral-100 relative">
+                  {p.image_url ? <img src={p.image_url} alt={p.title} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-neutral-300 text-sm">No image</div>}
+                  {isOnSale && <span className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{t('sale')}</span>}
+                </div>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-semibold text-neutral-900 text-sm">{p.title}</h3>
+                      <p className="text-xs text-neutral-500 mt-0.5">{p.category_name || p.category}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-neutral-900 text-sm">{formatPrice(p.price)}</p>
+                      {isOnSale && <p className="text-xs text-neutral-400 line-through">{formatPrice(p.compare_at_price!)}</p>}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => { setEditing(p); setShowForm(true); }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-colors">
+                      <Pencil className="w-3.5 h-3.5" /> {t('edit')}
+                    </button>
+                    <button onClick={() => onDelete(p.id)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" /> {t('delete')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showForm && (
+        <ProductForm product={editing} onClose={() => { setShowForm(false); setEditing(null); }} onSaved={onRefresh} t={t} categories={categories} />
+      )}
+    </div>
+  );
+}
+
+function ProductForm({ product, onClose, onSaved, t, categories }: {
+  product: Product | null;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+  t: (key: TKey) => string;
+  categories: Category[];
+}) {
+  const [form, setForm] = useState({
+    title: product?.title || '',
+    price: product?.price?.toString() || '',
+    compare_at_price: product?.compare_at_price?.toString() || '',
+    description: product?.description || '',
+    image_url: product?.image_url || '',
+    category: product?.category || (categories[0]?.slug || ''),
+    sizes: ensureString(product?.sizes) || 'S, M, L, XL',
+    colors: ensureString(product?.colors) || 'Black, White, Navy',
+    featured: product?.featured || false,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const update = (field: string, value: string | boolean) => setForm(prev => ({ ...prev, [field]: value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const price = Number(form.price);
+    const compareAtPrice = form.compare_at_price ? Number(form.compare_at_price) : null;
+
+    if (!Number.isFinite(price)) {
+      alert('Please enter a valid product price.');
+      return;
+    }
+    if (compareAtPrice !== null && !Number.isFinite(compareAtPrice)) {
+      alert('Please enter a valid original price.');
+      return;
+    }
+
+    setSaving(true);
+    const payload = {
+      title: form.title.trim(),
+      price,
+      compare_at_price: compareAtPrice,
+      description: form.description.trim(),
+      image_url: form.image_url.trim(),
+      category: form.category,
+      sizes: ensureString(form.sizes).trim(),
+      colors: ensureString(form.colors).trim(),
+      featured: form.featured,
+    };
+
+    try {
+      if (product) {
+        const productId = String(product.id);
+        if (!productId) {
+          alert('Cannot update this product because its ID is missing.');
+          return;
+        }
+
+        const { error } = await supabase
+          .from('products')
+          .update(payload)
+          .eq('id', productId)
+          .select('id')
+          .single();
+
+        if (error) {
+          console.error('Failed to update product', { productId, error });
+          alert(`Failed to update product: ${error.message}`);
+          return;
+        }
+      } else {
+        const { error } = await supabase
+          .from('products')
+          .insert(payload)
+          .select('id')
+          .single();
+
+        if (error) {
+          console.error('Failed to add product', error);
+          alert(`Failed to add product: ${error.message}`);
+          return;
+        }
+      }
+
+      await onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-neutral-100">
+          <h3 className="text-lg font-bold text-neutral-900">{product ? t('editProduct') : t('addProduct')}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-neutral-100 rounded-lg transition-colors"><X className="w-5 h-5 text-neutral-500" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('title')}</label>
+            <input required value={form.title} onChange={e => update('title', e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('price')} (EGP)</label>
+              <input required type="number" step="0.01" min="0" value={form.price} onChange={e => update('price', e.target.value)}
+                className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('originalPrice')} (EGP)</label>
+              <input type="number" step="0.01" min="0" value={form.compare_at_price} onChange={e => update('compare_at_price', e.target.value)}
+                className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent" placeholder="Optional" />
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('category')}</label>
+            <select value={form.category} onChange={e => update('category', e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white">
+              {categories.map(cat => <option key={cat.id} value={cat.slug}>{cat.name_en} / {cat.name_ar}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('imageUrl')}</label>
+            <input value={form.image_url} onChange={e => update('image_url', e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent"
+              placeholder="https://images.pexels.com/..." />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('description')}</label>
+            <textarea rows={3} value={form.description} onChange={e => update('description', e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('sizes')}</label>
+              <input value={form.sizes} onChange={e => update('sizes', e.target.value)}
+                className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('colors')}</label>
+              <input value={form.colors} onChange={e => update('colors', e.target.value)}
+                className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent" />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={form.featured} onChange={e => update('featured', e.target.checked)}
+              className="w-4 h-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900" />
+            <span className="text-sm font-medium text-neutral-700">{t('featuredProduct')}</span>
+          </label>
+          <button type="submit" disabled={saving}
+            className="w-full bg-neutral-900 text-white py-3.5 rounded-full text-sm font-semibold hover:bg-neutral-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving ? t('saving') : <><Check className="w-4 h-4" /> {product ? t('updateProduct') : t('addProduct')}</>}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CategoriesTab({ categories, loading, onRefresh, t }: {
+  categories: Category[];
+  loading: boolean;
+  onRefresh: () => void;
+  t: (key: TKey) => string;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name_en: '', name_ar: '', slug: '', image_url: '' });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    const { error } = await supabase.from('categories').insert({
+      name_en: form.name_en,
+      name_ar: form.name_ar,
+      slug: form.slug,
+      image_url: form.image_url || null,
+    });
+    setSaving(false);
+    if (error) { alert('Failed to add category.'); return; }
+    setForm({ name_en: '', name_ar: '', slug: '', image_url: '' });
+    setShowForm(false);
+    onRefresh();
+  };
+
+  const deleteCategory = async (id: string) => {
+    if (!confirm(t('deleteCategoryConfirm'))) return;
+    const { error } = await supabase.from('categories').delete().eq('id', id);
+    if (error) { alert('Failed to delete category.'); return; }
+    onRefresh();
+  };
+
+  if (loading) return <LoadingSkeleton />;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-bold text-neutral-900">{t('categories')} ({categories.length})</h2>
+        <button onClick={() => setShowForm(!showForm)}
+          className="flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-neutral-800 transition-colors">
+          <Plus className="w-4 h-4" /> {t('addCategory')}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white rounded-xl border border-neutral-100 p-6 mb-6">
+          <form onSubmit={handleSubmit} className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('categoryNameEn')}</label>
+              <input required value={form.name_en} onChange={e => setForm(p => ({ ...p, name_en: e.target.value }))}
+                className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('categoryNameAr')}</label>
+              <input required value={form.name_ar} onChange={e => setForm(p => ({ ...p, name_ar: e.target.value }))}
+                className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent" dir="rtl" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('categorySlug')}</label>
+              <input required value={form.slug} onChange={e => setForm(p => ({ ...p, slug: e.target.value }))}
+                className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent"
+                placeholder="e.g. Dresses" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('imageUrl')}</label>
+              <input value={form.image_url} onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))}
+                className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent"
+                placeholder="Optional" />
+            </div>
+            <div className="sm:col-span-2 flex gap-2">
+              <button type="submit" disabled={saving}
+                className="bg-neutral-900 text-white px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-neutral-800 disabled:opacity-50 flex items-center gap-2">
+                <Plus className="w-4 h-4" /> {saving ? t('saving') : t('addCategory')}
+              </button>
+              <button type="button" onClick={() => setShowForm(false)}
+                className="px-6 py-2.5 rounded-full text-sm font-medium bg-neutral-100 text-neutral-600 hover:bg-neutral-200">Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {categories.length === 0 ? (
+        <div className="text-center py-16"><p className="text-neutral-400">{t('noCategories')}</p></div>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {categories.map(cat => (
+            <div key={cat.id} className="bg-white rounded-xl border border-neutral-100 p-5 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                {cat.image_url ? (
+                  <img src={cat.image_url} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-neutral-100 flex items-center justify-center"><Tags className="w-5 h-5 text-neutral-300" /></div>
+                )}
+                <div>
+                  <p className="font-semibold text-neutral-900 text-sm">{cat.name_en}</p>
+                  <p className="text-xs text-neutral-500" dir="rtl">{cat.name_ar}</p>
+                  <p className="text-xs text-neutral-400">{cat.slug}</p>
+                </div>
+              </div>
+              <button onClick={() => deleteCategory(cat.id)}
+                className="p-2 text-neutral-400 hover:text-red-500 transition-colors">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-4">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="animate-pulse bg-white rounded-xl border border-neutral-100 p-6">
+          <div className="h-4 bg-neutral-200 rounded w-1/3 mb-3" />
+          <div className="h-3 bg-neutral-200 rounded w-2/3 mb-2" />
+          <div className="h-3 bg-neutral-200 rounded w-1/2" />
+        </div>
+      ))}
+    </div>
+  );
+}
