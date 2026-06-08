@@ -4,11 +4,24 @@ import { Package, ShoppingBag, LogOut, Plus, Pencil, Trash2, X, Check, ArrowLeft
 import { useAuth } from '../../contexts/AuthContext';
 import { useLang, type TKey } from '../../contexts/LanguageContext';
 import { supabase } from '../../lib/supabase';
-import type { Product, Order, OrderItem, Category } from '../../types';
+import type { Product, OrderItem, Category } from '../../types';
 import dashboardBg from '../../assets/admin-dashboard-bg.jpeg';
 
 type Tab = 'orders' | 'products' | 'categories';
-type OrderWithItems = Order & { items: OrderItem[] };
+type OrderStatus = 'Pending' | 'Shipped' | 'Completed';
+type AdminOrder = {
+  id: string;
+  created_at: string;
+  customer_name: string;
+  customer_email: string | null;
+  customer_phone: string;
+  shipping_address: string;
+  city: string | null;
+  total_amount: number;
+  status: OrderStatus;
+  payment_method: string | null;
+  items: OrderItem[];
+};
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function ensureString(val: unknown): string {
@@ -33,13 +46,25 @@ function normalizeProduct(raw: Record<string, unknown>): Product {
   } as Product;
 }
 
-function normalizeOrder(raw: Record<string, unknown>, items: OrderItem[] = []): OrderWithItems {
+function normalizeOrderStatus(value: unknown): OrderStatus {
+  if (value === 'Shipped' || value === 'Completed') return value;
+  return 'Pending';
+}
+
+function normalizeOrder(raw: Record<string, unknown>, items: OrderItem[] = []): AdminOrder {
   return {
-    ...raw,
     id: ensureString(raw.id),
-    total_price: Number(raw.total_price) || 0,
+    created_at: ensureString(raw.created_at),
+    customer_name: ensureString(raw.customer_name),
+    customer_email: raw.customer_email == null ? null : ensureString(raw.customer_email),
+    customer_phone: ensureString(raw.customer_phone),
+    shipping_address: ensureString(raw.shipping_address),
+    city: raw.city == null ? null : ensureString(raw.city),
+    total_amount: Number(raw.total_amount) || 0,
+    status: normalizeOrderStatus(raw.status),
+    payment_method: raw.payment_method == null ? null : ensureString(raw.payment_method),
     items,
-  } as OrderWithItems;
+  };
 }
 
 function normalizeOrderItem(raw: Record<string, unknown>): OrderItem {
@@ -66,7 +91,7 @@ export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const { t, formatPrice, lang } = useLang();
   const [tab, setTab] = useState<Tab>('orders');
-  const [orders, setOrders] = useState<OrderWithItems[]>([]);
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,7 +112,11 @@ export default function AdminDashboardPage() {
 
   const fetchOrders = async () => {
     setLoading(true);
-    const { data: orderData, error: ordersError } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+    const { data: orderData, error: ordersError } = await supabase
+      .from('orders')
+      .select('id, created_at, customer_name, customer_email, customer_phone, shipping_address, city, total_amount, status, payment_method')
+      .order('created_at', { ascending: false });
+
     if (ordersError) {
       console.error('Failed to fetch orders', ordersError);
       setOrders([]);
@@ -95,7 +124,10 @@ export default function AdminDashboardPage() {
       return;
     }
 
-    const { data: itemData, error: itemsError } = await supabase.from('order_items').select('*');
+    const { data: itemData, error: itemsError } = await supabase
+      .from('order_items')
+      .select('id, order_id, product_id, product_title, size, color, quantity, price');
+
     if (itemsError) {
       console.error('Failed to fetch order items', itemsError);
     }
@@ -135,7 +167,7 @@ export default function AdminDashboardPage() {
     if (showSpinner) setLoading(false);
   };
 
-  const updateStatus = async (orderId: string, status: Order['status']) => {
+  const updateStatus = async (orderId: string, status: OrderStatus) => {
     const id = String(orderId);
     if (!isUuid(id)) {
       console.error('Refusing to update order status with a non-UUID order id', { orderId: id });
@@ -257,15 +289,15 @@ export default function AdminDashboardPage() {
 }
 
 function OrdersTab({ orders, loading, onUpdateStatus, onDeleteOrder, formatPrice, t, lang }: {
-  orders: OrderWithItems[];
+  orders: AdminOrder[];
   loading: boolean;
-  onUpdateStatus: (id: string, status: Order['status']) => void;
+  onUpdateStatus: (id: string, status: OrderStatus) => void;
   onDeleteOrder: (id: string) => void;
   formatPrice: (price: number) => string;
   t: (key: TKey) => string;
   lang: string;
 }) {
-  const statuses: Order['status'][] = ['Pending', 'Shipped', 'Completed'];
+  const statuses: OrderStatus[] = ['Pending', 'Shipped', 'Completed'];
   const statusLabels: Record<string, Record<string, string>> = {
     Pending: { ar: 'قيد الانتظار', en: 'Pending' },
     Shipped: { ar: 'تم الشحن', en: 'Shipped' },
@@ -283,13 +315,17 @@ function OrdersTab({ orders, loading, onUpdateStatus, onDeleteOrder, formatPrice
             <div>
               <p className="text-xs text-neutral-400 mb-1">{t('order')} #{String(order.id || '').slice(0, 8).toUpperCase()}</p>
               <h3 className="text-base font-semibold text-neutral-900">{order.customer_name}</h3>
-              <p className="text-sm text-neutral-500">{order.phone}</p>
-              <p className="text-sm text-neutral-500">{order.address}, {order.city}</p>
+              <p className="text-sm text-neutral-500">{order.customer_phone || 'No phone'}</p>
+              {order.customer_email && <p className="text-sm text-neutral-500">{order.customer_email}</p>}
+              <p className="text-sm text-neutral-500">
+                {[order.shipping_address, order.city].filter(Boolean).join(', ') || 'No shipping address'}
+              </p>
+              {order.payment_method && <p className="text-xs text-neutral-400 mt-1">{order.payment_method}</p>}
               <p className="text-xs text-neutral-400 mt-1">{new Date(order.created_at).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
             </div>
             <div className="flex flex-col items-end gap-2">
               <span className={`px-3 py-1 rounded-full text-xs font-semibold ${order.status === 'Pending' ? 'bg-amber-50 text-amber-700' : order.status === 'Shipped' ? 'bg-blue-50 text-blue-700' : 'bg-green-50 text-green-700'}`}>{statusLabels[order.status]?.[lang] || order.status}</span>
-              <p className="text-lg font-bold text-neutral-900">{formatPrice(order.total_price)}</p>
+              <p className="text-lg font-bold text-neutral-900">{formatPrice(order.total_amount)}</p>
             </div>
           </div>
           <div className="border-t border-neutral-100 pt-4 mb-4">
