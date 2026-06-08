@@ -9,12 +9,17 @@ import dashboardBg from '../../assets/admin-dashboard-bg.jpeg';
 
 type Tab = 'orders' | 'products' | 'categories';
 type OrderWithItems = Order & { items: OrderItem[] };
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function ensureString(val: unknown): string {
   if (val == null) return '';
   if (typeof val === 'string') return val;
   if (Array.isArray(val)) return val.map(item => ensureString(item).trim()).filter(Boolean).join(', ');
   return String(val);
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_REGEX.test(value);
 }
 
 function normalizeProduct(raw: Record<string, unknown>): Product {
@@ -132,6 +137,12 @@ export default function AdminDashboardPage() {
 
   const updateStatus = async (orderId: string, status: Order['status']) => {
     const id = String(orderId);
+    if (!isUuid(id)) {
+      console.error('Refusing to update order status with a non-UUID order id', { orderId: id });
+      alert('Cannot update this order because its database ID is invalid. Please refresh the dashboard.');
+      return;
+    }
+
     const { error } = await supabase.from('orders').update({ status }).eq('id', id);
     if (error) {
       console.error('Failed to update order status', { orderId: id, status, error });
@@ -144,6 +155,12 @@ export default function AdminDashboardPage() {
   const deleteOrder = async (orderId: string) => {
     if (!confirm(t('deleteOrderConfirm'))) return;
     const id = String(orderId);
+    if (!isUuid(id)) {
+      console.error('Refusing to delete order with a non-UUID order id', { orderId: id });
+      alert('Cannot delete this order because its database ID is invalid. Please refresh the dashboard.');
+      return;
+    }
+
     try {
       const { error: itemsError } = await supabase.from('order_items').delete().eq('order_id', id);
       if (itemsError) {
@@ -167,6 +184,12 @@ export default function AdminDashboardPage() {
   const deleteProduct = async (id: string) => {
     if (!confirm(t('deleteProductConfirm'))) return;
     const productId = String(id);
+    if (!isUuid(productId)) {
+      console.error('Refusing to delete product with a non-UUID product id', { productId });
+      alert('Cannot delete this product because its database ID is invalid. Please refresh the dashboard.');
+      return;
+    }
+
     const { error } = await supabase.from('products').delete().eq('id', productId);
     if (error) { alert(`Failed to delete product: ${error.message}`); return; }
     setProducts(prev => prev.filter(p => String(p.id) !== productId));
@@ -418,17 +441,15 @@ function ProductForm({ product, onClose, onSaved, t, categories }: {
     try {
       if (product) {
         const productId = String(product.id);
-        if (!productId) {
-          alert('Cannot update this product because its ID is missing.');
+        if (!isUuid(productId)) {
+          alert('Cannot update this product because its database ID is invalid. Please refresh the dashboard.');
           return;
         }
 
         const { error } = await supabase
           .from('products')
           .update(payload)
-          .eq('id', productId)
-          .select('id')
-          .single();
+          .eq('id', productId);
 
         if (error) {
           console.error('Failed to update product', { productId, error });
