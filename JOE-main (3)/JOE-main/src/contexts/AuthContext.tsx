@@ -1,10 +1,9 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-
-const ADMIN_EMAIL = '01093431529';
-const ADMIN_PASSWORD = 'joanos1529';
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
   isAdmin: boolean;
+  loading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
 }
@@ -12,24 +11,38 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
+  const [isAdmin,  setIsAdmin]  = useState(false);
+  const [loading,  setLoading]  = useState(true); // true while we check session
+
+  // On first load, check if there is already a valid Supabase session
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setIsAdmin(!!data.session);
+      setLoading(false);
+    });
+
+    // Keep state in sync if session expires or user logs in on another tab
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAdmin(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-      setIsAdmin(true);
-      sessionStorage.setItem('isAdmin', 'true');
-      return true;
-    }
-    return false;
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return false;
+    setIsAdmin(true);
+    return true;
   }, []);
 
   const logout = useCallback(() => {
+    supabase.auth.signOut();
     setIsAdmin(false);
-    sessionStorage.removeItem('isAdmin');
   }, []);
 
   return (
-    <AuthContext.Provider value={{ isAdmin, login, logout }}>
+    <AuthContext.Provider value={{ isAdmin, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
