@@ -8,6 +8,7 @@ import type { OrderCustomer } from '../lib/orderService';
 import type { Product, Category } from '../types';
 import { splitList } from '../types';
 import ProductCard from '../components/ProductCard';
+import { GOVERNORATES, getShippingRate } from '../lib/shippingRates';
 
 const heroImage =
   'https://i.postimg.cc/zXcCWK1K/pngtree-maternal-and-infant-products-toys-baby-clothes-pregnancy-photographs-image-807969.jpg';
@@ -18,12 +19,10 @@ const defaultCategoryImages: Record<string, string> = {
   Pajamas: 'https://images.pexels.com/photos/6192554/pexels-photo-6192554.jpeg?auto=compress&cs=tinysrgb&w=800',
 };
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
 export default function HomePage() {
-  const [featured,       setFeatured]       = useState<Product[]>([]);
-  const [categories,     setCategories]     = useState<Category[]>([]);
-  const [quickProduct,   setQuickProduct]   = useState<Product | null>(null);
+  const [featured,     setFeatured]     = useState<Product[]>([]);
+  const [categories,   setCategories]   = useState<Category[]>([]);
+  const [quickProduct, setQuickProduct] = useState<Product | null>(null);
   const { t, lang } = useLang();
 
   useEffect(() => {
@@ -135,19 +134,28 @@ export default function HomePage() {
               <ProductCard
                 key={p.id}
                 product={p}
-                onOrderNow={setQuickProduct}   // just pass the setter directly
+                onOrderNow={setQuickProduct}
               />
             ))}
           </div>
         </section>
       )}
 
-      {/* ── COD banner ── */}
+      {/* ── COD banner — "Free Shipping" text REMOVED, replaced with COD-only messaging ── */}
       <section className="bg-neutral-950 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
-          <p className="text-sm tracking-widest uppercase text-neutral-400 mb-3">{t('freeShipping')}</p>
+          <p className="text-sm tracking-widest uppercase text-neutral-400 mb-3">
+            {lang === 'ar' ? 'الدفع عند الاستلام' : 'Cash on Delivery'}
+          </p>
           <h2 className="text-3xl sm:text-4xl font-bold mb-4">{t('codTitle')}</h2>
           <p className="text-neutral-400 max-w-md mx-auto">{t('codDesc')}</p>
+          <Link
+            to="/shipping"
+            className="inline-flex items-center gap-2 mt-8 text-sm text-neutral-400 hover:text-white transition-colors underline underline-offset-4"
+          >
+            {lang === 'ar' ? 'عرض أسعار الشحن حسب المحافظة' : 'View shipping rates by governorate'}
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
       </section>
 
@@ -163,9 +171,6 @@ export default function HomePage() {
 }
 
 // ─── Quick Checkout Modal ─────────────────────────────────────────────────────
-//
-// Uses submitOrder() from orderService — identical logic to CheckoutPage.
-// Column names, validation rules, and error handling are all shared.
 
 function QuickCheckoutModal({
   product,
@@ -182,6 +187,11 @@ function QuickCheckoutModal({
   const [selectedSize,  setSelectedSize]  = useState(sizes[0]);
   const [selectedColor, setSelectedColor] = useState(colors[0]);
 
+  // ── Governorate / shipping ────────────────────────────────────────────────
+  const [selectedGov, setSelectedGov] = useState<string>('');
+  const shippingCost = selectedGov ? (getShippingRate(selectedGov) ?? 0) : 0;
+  const orderTotal   = product.price + shippingCost;
+
   const [customer, setCustomer] = useState<OrderCustomer>({
     customer_name:    '',
     customer_phone:   '',
@@ -195,23 +205,30 @@ function QuickCheckoutModal({
   const update = (field: keyof OrderCustomer, value: string) =>
     setCustomer(prev => ({ ...prev, [field]: value }));
 
+  const handleGovChange = (slug: string) => {
+    setSelectedGov(slug);
+    const gov = GOVERNORATES.find(g => g.slug === slug);
+    if (gov) update('city', lang === 'ar' ? gov.name_ar : gov.name_en);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
-    // Shared validation — same function used by CheckoutPage
-    const validationErrors = validateCustomer(customer, lang);
-    const firstError = Object.values(validationErrors)[0];
-    if (firstError) {
-      setErrorMsg(firstError);
+    if (!selectedGov) {
+      setErrorMsg(lang === 'ar' ? 'يرجى اختيار المحافظة' : 'Please select a governorate');
       return;
     }
+
+    const validationErrors = validateCustomer(customer, lang);
+    const firstError = Object.values(validationErrors)[0];
+    if (firstError) { setErrorMsg(firstError); return; }
 
     setSubmitting(true);
 
     const result = await submitOrder({
       customer,
-      total_amount: product.price,
+      total_amount: orderTotal,
       items: [
         {
           product_id:    product.id,
@@ -238,7 +255,7 @@ function QuickCheckoutModal({
     setSuccess(true);
   };
 
-  // ── Success state ───────────────────────────────────────────────────────────
+  // ── Success state ────────────────────────────────────────────────────────
   if (success) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
@@ -259,7 +276,7 @@ function QuickCheckoutModal({
     );
   }
 
-  // ── Form state ──────────────────────────────────────────────────────────────
+  // ── Form state ────────────────────────────────────────────────────────────
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
@@ -301,7 +318,7 @@ function QuickCheckoutModal({
             </div>
           </div>
 
-          {/* Size / Color selectors — only shown when product has multiple options */}
+          {/* Size / Color selectors */}
           {(sizes.length > 1 || colors.length > 1) && (
             <div className="grid grid-cols-2 gap-3">
               {sizes.length > 1 && (
@@ -359,13 +376,27 @@ function QuickCheckoutModal({
               className="w-full border border-neutral-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
               placeholder={lang === 'ar' ? 'رقم الهاتف' : 'Phone Number'}
             />
-            <input
-              required type="text"
-              value={customer.city}
-              onChange={e => update('city', e.target.value)}
-              className="w-full border border-neutral-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
-              placeholder={lang === 'ar' ? 'المدينة' : 'City'}
-            />
+
+            {/* ── Governorate dropdown ── */}
+            <select
+              required
+              value={selectedGov}
+              onChange={e => handleGovChange(e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900"
+            >
+              <option value="" disabled>
+                {lang === 'ar' ? '— اختر المحافظة —' : '— Select Governorate —'}
+              </option>
+              {GOVERNORATES.map(gov => (
+                <option key={gov.slug} value={gov.slug}>
+                  {lang === 'ar' ? gov.name_ar : gov.name_en}
+                  {' '}({gov.rate === 0
+                    ? (lang === 'ar' ? 'مجاني' : 'Free')
+                    : `${gov.rate} ${lang === 'ar' ? 'ج.م' : 'EGP'}`})
+                </option>
+              ))}
+            </select>
+
             <input
               required type="text"
               value={customer.shipping_address}
@@ -373,6 +404,17 @@ function QuickCheckoutModal({
               className="w-full border border-neutral-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
               placeholder={lang === 'ar' ? 'عنوان الشحن' : 'Shipping Address'}
             />
+
+            {/* Order total with shipping */}
+            {selectedGov && (
+              <div className="flex justify-between text-sm bg-neutral-50 rounded-lg px-4 py-3">
+                <span className="text-neutral-500">
+                  {lang === 'ar' ? 'الإجمالي (شامل الشحن)' : 'Total (incl. shipping)'}
+                </span>
+                <span className="font-bold text-neutral-900">{formatPrice(orderTotal)}</span>
+              </div>
+            )}
+
             <button
               type="submit" disabled={submitting}
               className="w-full bg-[#1a202c] text-white py-3 rounded-full text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-1"
