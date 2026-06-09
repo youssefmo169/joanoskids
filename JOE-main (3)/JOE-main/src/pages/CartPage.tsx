@@ -97,7 +97,7 @@ export default function CartPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-500">{t('shipping')}</span>
-              <span className="font-medium text-green-600">{t('depend on your government - معتمد علي محافظتك')}</span>
+              <span className="font-medium text-green-600">{t(' depend on your government - معتمد علي محافظتك ')}</span>
             </div>
             <div className="border-t border-neutral-100 pt-3 flex justify-between">
               <span className="font-semibold text-neutral-900">{t('total')}</span>
