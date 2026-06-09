@@ -58,7 +58,7 @@ const translations = {
     startShopping: 'ابدأ التسوق',
     subtotal: 'المجموع الفرعي',
     shipping: 'الشحن',
-    Dependonyourgovernment: 'يعتمد علي محافظتك',
+    free: 'مجاني',
     total: 'الإجمالي',
     paymentCod: 'الدفع: عند الاستلام',
     orderSummary: 'ملخص الطلب',
