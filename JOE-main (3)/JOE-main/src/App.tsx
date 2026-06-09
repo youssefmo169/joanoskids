@@ -14,6 +14,8 @@ import ShippingPage from './pages/ShippingPage';
 import ReturnPolicyPage from './pages/ReturnPolicyPage';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import ScrollToTop from './components/ScrollToTop';
+import ContactPage from './pages/ContactPage';
 
 export default function App() {
   return (
@@ -21,6 +23,7 @@ export default function App() {
       <LanguageProvider>
         <AuthProvider>
           <CartProvider>
+            <ScrollToTop />
             <Routes>
               <Route path="/admin/login" element={<AdminLoginPage />} />
               <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
@@ -37,6 +40,7 @@ export default function App() {
                       <Route path="/about" element={<AboutPage />} />
                       <Route path="/shipping" element={<ShippingPage />} />
                       <Route path="/returns" element={<ReturnPolicyPage />} />
+                      <Route path="/contact" element={<ContactPage />} />
                     </Routes>
                   </main>
                   <Footer />
