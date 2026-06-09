@@ -5,6 +5,7 @@ import { useCart } from '../contexts/CartContext';
 import { useLang } from '../contexts/LanguageContext';
 import { submitOrder, validateCustomer } from '../lib/orderService';
 import type { OrderCustomer } from '../lib/orderService';
+import { GOVERNORATES, getShippingRate } from '../lib/shippingRates';
 
 export default function CheckoutPage() {
   const { items, totalPrice, clearCart } = useCart();
@@ -16,6 +17,11 @@ export default function CheckoutPage() {
     shipping_address: '',
     city:             '',
   });
+  // ── Governorate / shipping state ──────────────────────────────────────────
+  const [selectedGov, setSelectedGov] = useState<string>('');
+  const shippingCost = selectedGov ? (getShippingRate(selectedGov) ?? 0) : 0;
+  const orderTotal   = totalPrice + shippingCost;
+
   const [submitting, setSubmitting] = useState(false);
   const [success,    setSuccess]    = useState(false);
   const [errorMsg,   setErrorMsg]   = useState<string | null>(null);
@@ -23,23 +29,31 @@ export default function CheckoutPage() {
   const update = (field: keyof OrderCustomer, value: string) =>
     setCustomer(prev => ({ ...prev, [field]: value }));
 
+  const handleGovChange = (slug: string) => {
+    setSelectedGov(slug);
+    // Also set the city field to the chosen governorate name so it reaches the order
+    const gov = GOVERNORATES.find(g => g.slug === slug);
+    if (gov) update('city', lang === 'ar' ? gov.name_ar : gov.name_en);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
-    // Client-side validation — same rules as QuickCheckoutModal
-    const validationErrors = validateCustomer(customer, lang);
-    const firstError = Object.values(validationErrors)[0];
-    if (firstError) {
-      setErrorMsg(firstError);
+    if (!selectedGov) {
+      setErrorMsg(lang === 'ar' ? 'يرجى اختيار المحافظة' : 'Please select a governorate');
       return;
     }
+
+    const validationErrors = validateCustomer(customer, lang);
+    const firstError = Object.values(validationErrors)[0];
+    if (firstError) { setErrorMsg(firstError); return; }
 
     setSubmitting(true);
 
     const result = await submitOrder({
       customer,
-      total_amount: totalPrice,
+      total_amount: orderTotal,
       items: items.map(item => ({
         product_id:    item.product.id,
         product_title: item.product.title,
@@ -137,19 +151,44 @@ export default function CheckoutPage() {
                   value={customer.customer_phone}
                   onChange={e => update('customer_phone', e.target.value)}
                   className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-shadow"
-                  placeholder={lang === 'ar' ? '+20 123 456 7890' : '+1 234 567 8900'}
+                  placeholder={lang === 'ar' ? '+20 123 456 7890' : '+20 123 456 7890'}
                 />
               </div>
 
+              {/* ── Governorate dropdown ── */}
               <div>
-                <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('city')}</label>
-                <input
-                  required type="text"
-                  value={customer.city}
-                  onChange={e => update('city', e.target.value)}
-                  className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-shadow"
-                  placeholder={lang === 'ar' ? 'القاهرة' : 'New York'}
-                />
+                <label className="text-sm font-medium text-neutral-700 mb-1.5 block">
+                  {lang === 'ar' ? 'المحافظة' : 'Governorate'}
+                </label>
+                <select
+                  required
+                  value={selectedGov}
+                  onChange={e => handleGovChange(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-shadow"
+                >
+                  <option value="" disabled>
+                    {lang === 'ar' ? '— اختر المحافظة —' : '— Select Governorate —'}
+                  </option>
+                  {GOVERNORATES.map(gov => (
+                    <option key={gov.slug} value={gov.slug}>
+                      {lang === 'ar' ? gov.name_ar : gov.name_en}
+                      {' '}({gov.rate === 0
+                        ? (lang === 'ar' ? 'مجاني' : 'Free')
+                        : `${gov.rate} ${lang === 'ar' ? 'ج.م' : 'EGP'}`})
+                    </option>
+                  ))}
+                </select>
+                {/* Inline shipping cost badge */}
+                {selectedGov && (
+                  <p className="mt-1.5 text-xs text-neutral-500">
+                    {lang === 'ar' ? 'تكلفة الشحن:' : 'Shipping cost:'}{' '}
+                    <span className={`font-semibold ${shippingCost === 0 ? 'text-green-600' : 'text-neutral-900'}`}>
+                      {shippingCost === 0
+                        ? (lang === 'ar' ? 'مجاني' : 'Free')
+                        : `${shippingCost} ${lang === 'ar' ? 'ج.م' : 'EGP'}`}
+                    </span>
+                  </p>
+                )}
               </div>
 
               <div className="sm:col-span-2">
@@ -185,7 +224,7 @@ export default function CheckoutPage() {
           </button>
         </form>
 
-        {/* Order summary sidebar */}
+        {/* ── Order summary sidebar ── */}
         <div className="bg-white border border-neutral-100 rounded-xl p-6 h-fit sticky top-24">
           <h2 className="text-lg font-bold text-neutral-900 mb-4">{t('orderSummary')}</h2>
           <div className="space-y-3 mb-4">
@@ -212,12 +251,24 @@ export default function CheckoutPage() {
               <span>{formatPrice(totalPrice)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-500">{t('shipping')}</span>
-              <span className="text-green-600">{t('free')}</span>
+              <span className="text-neutral-500">
+                {lang === 'ar' ? 'الشحن' : 'Shipping'}
+              </span>
+              {selectedGov ? (
+                <span className={shippingCost === 0 ? 'text-green-600' : 'font-medium'}>
+                  {shippingCost === 0
+                    ? (lang === 'ar' ? 'مجاني' : 'Free')
+                    : formatPrice(shippingCost)}
+                </span>
+              ) : (
+                <span className="text-neutral-400 text-xs italic">
+                  {lang === 'ar' ? 'اختر المحافظة' : 'Select governorate'}
+                </span>
+              )}
             </div>
             <div className="border-t border-neutral-100 pt-2 flex justify-between font-bold text-neutral-900">
               <span>{t('total')}</span>
-              <span>{formatPrice(totalPrice)}</span>
+              <span>{formatPrice(orderTotal)}</span>
             </div>
           </div>
         </div>
