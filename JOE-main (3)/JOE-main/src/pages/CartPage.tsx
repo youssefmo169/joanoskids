@@ -96,7 +96,7 @@ export default function CartPage() {
               <span className="font-medium">{formatPrice(totalPrice)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-500">{t('shipping')}</span>
+              <span className="text-neutral-500">{t('shipping:')}</span>
               <span className="font-medium text-green-600">{t(' depend on your government - معتمد علي محافظتك ')}</span>
             </div>
             <div className="border-t border-neutral-100 pt-3 flex justify-between">
