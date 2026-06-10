@@ -7,13 +7,26 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useLang, type TKey } from '../../contexts/LanguageContext';
 import { supabase } from '../../lib/supabase';
-import type { Product, OrderItem, Category } from '../../types';
+import type { Product, Category } from '../../types';
 import dashboardBg from '../../assets/admin-dashboard-bg.jpeg';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Tab = 'orders' | 'products' | 'categories';
 type OrderStatus = 'Pending' | 'Shipped' | 'Completed';
+
+/** Normalised shape of a single purchased line-item */
+type AdminOrderItem = {
+  id: string;
+  order_id: string;
+  product_id: string | null;
+  product_title: string;
+  size: string;
+  color: string;
+  quantity: number;
+  price: number;
+};
+
 type AdminOrder = {
   id: string;
   created_at: string;
@@ -25,7 +38,8 @@ type AdminOrder = {
   total_amount: number;
   status: OrderStatus;
   payment_method: string | null;
-  items: OrderItem[];
+  /** Items come back nested from the relational select */
+  items: AdminOrderItem[];
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -59,7 +73,22 @@ function normalizeOrderStatus(value: unknown): OrderStatus {
   return 'Pending';
 }
 
-function normalizeOrder(raw: Record<string, unknown>, items: OrderItem[] = []): AdminOrder {
+function normalizeOrderItem(raw: Record<string, unknown>): AdminOrderItem {
+  return {
+    id: ensureString(raw.id),
+    order_id: ensureString(raw.order_id),
+    product_id: raw.product_id == null ? null : ensureString(raw.product_id),
+    product_title: ensureString(raw.product_title) || 'Unnamed product',
+    size: ensureString(raw.size),
+    color: ensureString(raw.color),
+    quantity: Number(raw.quantity) || 0,
+    price: Number(raw.price) || 0,
+  };
+}
+
+function normalizeOrder(raw: Record<string, unknown>): AdminOrder {
+  // Supabase returns nested rows as an array under the foreign table key
+  const rawItems = Array.isArray(raw.order_items) ? raw.order_items : [];
   return {
     id: ensureString(raw.id),
     created_at: ensureString(raw.created_at),
@@ -71,19 +100,8 @@ function normalizeOrder(raw: Record<string, unknown>, items: OrderItem[] = []): 
     total_amount: Number(raw.total_amount) || 0,
     status: normalizeOrderStatus(raw.status),
     payment_method: raw.payment_method == null ? null : ensureString(raw.payment_method),
-    items,
+    items: rawItems.map(item => normalizeOrderItem(item as Record<string, unknown>)),
   };
-}
-
-function normalizeOrderItem(raw: Record<string, unknown>): OrderItem {
-  return {
-    ...raw,
-    id: ensureString(raw.id),
-    order_id: ensureString(raw.order_id),
-    product_id: raw.product_id == null ? null : ensureString(raw.product_id),
-    quantity: Number(raw.quantity) || 0,
-    price: Number(raw.price) || 0,
-  } as OrderItem;
 }
 
 function normalizeCategory(raw: Record<string, unknown>): Category {
@@ -218,26 +236,24 @@ export default function AdminDashboardPage() {
 
   const fetchOrders = async () => {
     setLoading(true);
-    const { data: orderData, error: ordersError } = await supabase
+    // Single relational query — Supabase nests order_items under the key 'order_items'
+    const { data, error } = await supabase
       .from('orders')
-      .select('id, created_at, customer_name, customer_email, customer_phone, shipping_address, city, total_amount, status, payment_method')
+      .select(`
+        id, created_at, customer_name, customer_email, customer_phone,
+        shipping_address, city, total_amount, status, payment_method,
+        order_items (
+          id, order_id, product_id, product_title, size, color, quantity, price
+        )
+      `)
       .order('created_at', { ascending: false });
 
-    if (ordersError) { setOrders([]); setLoading(false); return; }
-
-    const { data: itemData } = await supabase
-      .from('order_items')
-      .select('id, order_id, product_id, product_title, size, color, quantity, price');
-
-    const normalizedItems = (itemData || []).map(item => normalizeOrderItem(item as Record<string, unknown>));
-    const itemsByOrder = normalizedItems.reduce<Record<string, OrderItem[]>>((acc, item) => {
-      const orderId = String(item.order_id);
-      if (!acc[orderId]) acc[orderId] = [];
-      acc[orderId].push(item);
-      return acc;
-    }, {});
-
-    setOrders((orderData || []).map(o => normalizeOrder(o as Record<string, unknown>, itemsByOrder[String(o.id)] || [])));
+    if (error) {
+      console.error('Failed to fetch orders', error);
+      setOrders([]);
+    } else {
+      setOrders((data || []).map(o => normalizeOrder(o as Record<string, unknown>)));
+    }
     setLoading(false);
   };
 
@@ -402,15 +418,45 @@ function OrdersTab({ orders, loading, onUpdateStatus, onDeleteOrder, formatPrice
             </div>
           </div>
           <div className="border-t border-neutral-100 pt-4 mb-4">
-            <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">{t('itemsLabel')}</p>
-            <div className="space-y-1.5">
-              {order.items.map(item => (
-                <div key={item.id} className="flex justify-between text-sm">
-                  <span className="text-neutral-700">{item.product_title} ({item.size}/{item.color}) x{item.quantity}</span>
-                  <span className="text-neutral-900 font-medium">{formatPrice(item.price * item.quantity)}</span>
-                </div>
-              ))}
-            </div>
+            <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+              {t('itemsLabel')} ({order.items.length})
+            </p>
+            {order.items.length === 0 ? (
+              <p className="text-sm text-neutral-400 italic">No products found for this order.</p>
+            ) : (
+              <div className="space-y-2">
+                {order.items.map(item => (
+                  <div key={item.id} className="flex items-start justify-between gap-3 py-2 border-b border-neutral-50 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-neutral-800 truncate">
+                        {item.product_title || 'Unnamed product'}
+                      </p>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                        {item.size && (
+                          <span className="text-xs text-neutral-500">
+                            Size: <span className="font-medium text-neutral-700">{item.size}</span>
+                          </span>
+                        )}
+                        {item.color && (
+                          <span className="text-xs text-neutral-500">
+                            Color: <span className="font-medium text-neutral-700">{item.color}</span>
+                          </span>
+                        )}
+                        <span className="text-xs text-neutral-500">
+                          Qty: <span className="font-medium text-neutral-700">{item.quantity}</span>
+                        </span>
+                        <span className="text-xs text-neutral-500">
+                          Unit: <span className="font-medium text-neutral-700">{formatPrice(item.price)}</span>
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-sm font-semibold text-neutral-900 whitespace-nowrap">
+                      {formatPrice(item.price * item.quantity)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex gap-2 flex-wrap">
             {statuses.map(s => (
