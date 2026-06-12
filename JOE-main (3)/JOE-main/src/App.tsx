@@ -16,7 +16,6 @@ import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import ScrollToTop from './components/ScrollToTop';
 import ContactPage from './pages/ContactPage';
-import FacebookPixel from './components/FacebookPixel';
 
 export default function App() {
   return (
@@ -25,7 +24,6 @@ export default function App() {
         <AuthProvider>
           <CartProvider>
             <ScrollToTop />
-            <FacebookPixel />
             <Routes>
               <Route path="/admin/login" element={<AdminLoginPage />} />
               <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
