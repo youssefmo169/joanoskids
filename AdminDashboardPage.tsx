@@ -231,12 +231,14 @@ export default function AdminDashboardPage() {
 
   if (!isAdmin) return null;
 
- const tabButtons = [
+const tabButtons = [
     { key: 'orders' as Tab, icon: ShoppingBag, label: t('orders') },
     { key: 'products' as Tab, icon: Package, label: t('products') },
     { key: 'categories' as Tab, icon: Tags, label: t('categories') },
     { key: 'settings' as Tab, icon: Settings, label: 'Settings' },
   ];
+
+  return (
     <div
       className="min-h-screen bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.78), rgba(255,255,255,0.88)), url(${dashboardBg})` }}
@@ -284,6 +286,11 @@ export default function AdminDashboardPage() {
   {tab === 'categories' && <CategoriesTab categories={categories} loading={loading} onRefresh={fetchCategories} t={t} />}
   {tab === 'settings' && <SettingsTab />}
 </main>
+    </div>
+  );
+}
+
+function OrdersTab
 
 function OrdersTab({ orders, loading, onUpdateStatus, onDeleteOrder, formatPrice, t, lang }: {
   orders: AdminOrder[];
