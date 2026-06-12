@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Package, ShoppingBag, LogOut, Plus, Pencil, Trash2, X, Check, ArrowLeft, Tags } from 'lucide-react';
+import { Package, ShoppingBag, LogOut, Plus, Pencil, Trash2, X, Check, ArrowLeft, Tags, Settings } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLang, type TKey } from '../../contexts/LanguageContext';
 import { supabase } from '../../lib/supabase';
 import type { Product, OrderItem, Category } from '../../types';
 import dashboardBg from '../../assets/admin-dashboard-bg.jpeg';
 
-type Tab = 'orders' | 'products' | 'categories';
+type Tab = 'orders' | 'products' | 'categories' | 'settings';
 type OrderStatus = 'Pending' | 'Shipped' | 'Completed';
 type AdminOrder = {
   id: string;
@@ -231,13 +231,12 @@ export default function AdminDashboardPage() {
 
   if (!isAdmin) return null;
 
-  const tabButtons = [
+ const tabButtons = [
     { key: 'orders' as Tab, icon: ShoppingBag, label: t('orders') },
     { key: 'products' as Tab, icon: Package, label: t('products') },
     { key: 'categories' as Tab, icon: Tags, label: t('categories') },
+    { key: 'settings' as Tab, icon: Settings, label: 'Settings' },
   ];
-
-  return (
     <div
       className="min-h-screen bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.78), rgba(255,255,255,0.88)), url(${dashboardBg})` }}
@@ -279,14 +278,12 @@ export default function AdminDashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {tab === 'orders' && <OrdersTab orders={orders} loading={loading} onUpdateStatus={updateStatus} onDeleteOrder={deleteOrder} formatPrice={formatPrice} t={t} lang={lang} />}
-        {tab === 'products' && <ProductsTab products={products} loading={loading} onDelete={deleteProduct} onRefresh={fetchProducts} formatPrice={formatPrice} t={t} categories={categories} />}
-        {tab === 'categories' && <CategoriesTab categories={categories} loading={loading} onRefresh={fetchCategories} t={t} />}
-      </main>
-    </div>
-  );
-}
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  {tab === 'orders' && <OrdersTab orders={orders} loading={loading} onUpdateStatus={updateStatus} onDeleteOrder={deleteOrder} formatPrice={formatPrice} t={t} lang={lang} />}
+  {tab === 'products' && <ProductsTab products={products} loading={loading} onDelete={deleteProduct} onRefresh={fetchProducts} formatPrice={formatPrice} t={t} categories={categories} />}
+  {tab === 'categories' && <CategoriesTab categories={categories} loading={loading} onRefresh={fetchCategories} t={t} />}
+  {tab === 'settings' && <SettingsTab />}
+</main>
 
 function OrdersTab({ orders, loading, onUpdateStatus, onDeleteOrder, formatPrice, t, lang }: {
   orders: AdminOrder[];
@@ -694,7 +691,65 @@ function CategoriesTab({ categories, loading, onRefresh, t }: {
     </div>
   );
 }
+function SettingsTab() {
+  const [pixelId, setPixelId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
+  useEffect(() => {
+    supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'facebook_pixel_id')
+      .single()
+      .then(({ data }) => {
+        if (data?.value) setPixelId(data.value);
+      });
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    await supabase
+      .from('settings')
+      .update({ value: pixelId.trim() })
+      .eq('key', 'facebook_pixel_id');
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  return (
+    <div className="max-w-xl">
+      <h2 className="text-lg font-bold text-neutral-900 mb-6">Settings</h2>
+      <div className="bg-white rounded-xl border border-neutral-100 p-6">
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-neutral-700 mb-1.5 block">
+              Facebook Pixel ID
+            </label>
+            <input
+              value={pixelId}
+              onChange={e => setPixelId(e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+              placeholder="e.g. 1234567890123456"
+            />
+            <p className="text-xs text-neutral-400 mt-1">
+              هتلاقي الـ Pixel ID في Facebook Events Manager
+            </p>
+          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex items-center gap-2 bg-neutral-900 text-white px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {saved ? <><Check className="w-4 h-4" /> Saved!</> : saving ? 'Saving...' : 'Save'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
 function LoadingSkeleton() {
   return (
     <div className="space-y-4">
