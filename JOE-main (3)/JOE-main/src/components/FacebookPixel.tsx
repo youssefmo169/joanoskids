@@ -1,17 +1,24 @@
-// ─── Facebook Pixel ───────────────────────────────────────────────────────────
-// لتغيير الـ Pixel: غيّر الـ PIXEL_ID بس وخلي باقي الكود زي ما هو
-// ────────────────────────────────────────────────────────────────────────────
-
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-
-const PIXEL_ID = 'ضع_الـ_PIXEL_ID_هنا'; // ← غيّر هنا بس
+import { supabase } from '../lib/supabase';
 
 export default function FacebookPixel() {
   const location = useLocation();
+  const [pixelId, setPixelId] = useState<string | null>(null);
 
   useEffect(() => {
-    // تحميل سكريبت الفيس بوك مرة واحدة بس
+    supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'facebook_pixel_id')
+      .single()
+      .then(({ data }) => {
+        if (data?.value) setPixelId(data.value);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!pixelId) return;
     if ((window as any).fbq) return;
 
     const script = document.createElement('script');
@@ -24,18 +31,12 @@ export default function FacebookPixel() {
       t.src=v;s=b.getElementsByTagName(e)[0];
       s.parentNode.insertBefore(t,s)}(window, document,'script',
       'https://connect.facebook.net/en_US/fbevents.js');
-      fbq('init', '${PIXEL_ID}');
+      fbq('init', '${pixelId}');
       fbq('track', 'PageView');
     `;
     document.head.appendChild(script);
+  }, [pixelId]);
 
-    // noscript fallback
-    const noscript = document.createElement('noscript');
-    noscript.innerHTML = `<img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=${PIXEL_ID}&ev=PageView&noscript=1"/>`;
-    document.head.appendChild(noscript);
-  }, []);
-
-  // تتبع كل صفحة بيدخل عليها الزبون
   useEffect(() => {
     if ((window as any).fbq) {
       (window as any).fbq('track', 'PageView');
