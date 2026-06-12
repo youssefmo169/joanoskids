@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Package, ShoppingBag, LogOut, Plus, Pencil, Trash2,
-  X, Check, ArrowLeft, Tags, Upload, ImageIcon,
+  X, Check, ArrowLeft, Tags, Upload, ImageIcon, Settings,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLang, type TKey } from '../../contexts/LanguageContext';
@@ -12,7 +12,7 @@ import dashboardBg from '../../assets/admin-dashboard-bg.jpeg';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = 'orders' | 'products' | 'categories';
+type Tab = 'orders' | 'products' | 'categories' | 'settings';
 type OrderStatus = 'Pending' | 'Shipped' | 'Completed';
 type AdminOrder = {
   id: string;
@@ -96,10 +96,6 @@ function normalizeCategory(raw: Record<string, unknown>): Category {
 
 // ─── Image Upload ─────────────────────────────────────────────────────────────
 
-/**
- * Uploads a file to a Supabase Storage bucket and returns the public URL.
- * Bucket names: 'product-images' | 'category-images'
- */
 async function uploadImage(file: File, bucket: string): Promise<string> {
   const ext = file.name.split('.').pop() ?? 'jpg';
   const uniqueName = `${crypto.randomUUID()}.${ext}`;
@@ -135,7 +131,6 @@ function ImageUploadField({
     <div>
       <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{label}</label>
 
-      {/* Preview */}
       {currentUrl && !uploading && (
         <div className="relative mb-2 w-full h-32 rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50">
           <img src={currentUrl} alt="Preview" className="w-full h-full object-cover" />
@@ -213,7 +208,7 @@ export default function AdminDashboardPage() {
     if (!isAdmin) return;
     if (tab === 'orders') fetchOrders();
     else if (tab === 'products') { fetchProducts(); fetchCategories(false); }
-    else fetchCategories();
+    else if (tab === 'categories') fetchCategories();
   }, [tab, isAdmin]);
 
   const fetchOrders = async () => {
@@ -295,6 +290,7 @@ export default function AdminDashboardPage() {
     { key: 'orders' as Tab, icon: ShoppingBag, label: t('orders') },
     { key: 'products' as Tab, icon: Package, label: t('products') },
     { key: 'categories' as Tab, icon: Tags, label: t('categories') },
+    { key: 'settings' as Tab, icon: Settings, label: 'Settings' },
   ];
 
   return (
@@ -350,6 +346,7 @@ export default function AdminDashboardPage() {
         {tab === 'categories' && (
           <CategoriesTab categories={categories} loading={loading} onRefresh={fetchCategories} t={t} />
         )}
+        {tab === 'settings' && <SettingsTab />}
       </main>
     </div>
   );
@@ -607,14 +604,12 @@ function ProductForm({ product, onClose, onSaved, t, categories }: {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Title */}
           <div>
             <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('title')}</label>
             <input required value={form.title} onChange={e => update('title', e.target.value)}
               className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent" />
           </div>
 
-          {/* Price */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('price')} (EGP)</label>
@@ -629,7 +624,6 @@ function ProductForm({ product, onClose, onSaved, t, categories }: {
             </div>
           </div>
 
-          {/* Category */}
           <div>
             <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('category')}</label>
             <select value={form.category} onChange={e => update('category', e.target.value)}
@@ -638,7 +632,6 @@ function ProductForm({ product, onClose, onSaved, t, categories }: {
             </select>
           </div>
 
-          {/* Image upload */}
           <ImageUploadField
             currentUrl={form.image_url}
             onUrlChange={url => update('image_url', url)}
@@ -647,14 +640,12 @@ function ProductForm({ product, onClose, onSaved, t, categories }: {
             label={t('imageUrl')}
           />
 
-          {/* Description */}
           <div>
             <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('description')}</label>
             <textarea rows={3} value={form.description} onChange={e => update('description', e.target.value)}
               className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none" />
           </div>
 
-          {/* Sizes & Colors */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium text-neutral-700 mb-1.5 block">{t('sizes')}</label>
@@ -668,14 +659,12 @@ function ProductForm({ product, onClose, onSaved, t, categories }: {
             </div>
           </div>
 
-          {/* Featured */}
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={form.featured} onChange={e => update('featured', e.target.checked)}
               className="w-4 h-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900" />
             <span className="text-sm font-medium text-neutral-700">{t('featuredProduct')}</span>
           </label>
 
-          {/* Submit */}
           <button type="submit" disabled={isBusy}
             className="w-full bg-neutral-900 text-white py-3.5 rounded-full text-sm font-semibold hover:bg-neutral-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {uploadingImage
@@ -774,7 +763,6 @@ function CategoriesTab({ categories, loading, onRefresh, t }: {
                 placeholder="e.g. Dresses" />
             </div>
 
-            {/* Image upload spanning 2 cols on sm */}
             <div className="sm:col-span-2">
               <ImageUploadField
                 currentUrl={form.image_url}
@@ -829,6 +817,68 @@ function CategoriesTab({ categories, loading, onRefresh, t }: {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Settings Tab ─────────────────────────────────────────────────────────────
+
+function SettingsTab() {
+  const [pixelId, setPixelId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'facebook_pixel_id')
+      .single()
+      .then(({ data }) => {
+        if (data?.value) setPixelId(data.value);
+      });
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    await supabase
+      .from('settings')
+      .update({ value: pixelId.trim() })
+      .eq('key', 'facebook_pixel_id');
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  return (
+    <div className="max-w-xl">
+      <h2 className="text-lg font-bold text-neutral-900 mb-6">Settings</h2>
+      <div className="bg-white rounded-xl border border-neutral-100 p-6">
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-neutral-700 mb-1.5 block">
+              Facebook Pixel ID
+            </label>
+            <input
+              value={pixelId}
+              onChange={e => setPixelId(e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+              placeholder="e.g. 1234567890123456"
+            />
+            <p className="text-xs text-neutral-400 mt-1">
+              هتلاقي الـ Pixel ID في Facebook Events Manager
+            </p>
+          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex items-center gap-2 bg-neutral-900 text-white px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {saved ? <><Check className="w-4 h-4" /> Saved!</> : saving ? 'Saving...' : 'Save'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
