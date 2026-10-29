@@ -37,7 +37,15 @@ export default function CartPage() {
               <Link to={`/product/${item.product.id}`} className="flex-shrink-0">
                 <div className="w-24 h-32 rounded-lg overflow-hidden bg-neutral-100">
                   {item.product.image_url ? (
-                    <img src={item.product.image_url} alt={item.product.title} className="w-full h-full object-cover" />
+                    <img
+                      src={item.product.image_url}
+                      alt={item.product.title}
+                      loading="lazy"
+                      decoding="async"
+                      width={96}
+                      height={128}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-neutral-300 text-xs">No image</div>
                   )}

@@ -79,7 +79,14 @@ export default function ProductDetailPage() {
       <div className="grid md:grid-cols-2 gap-10 lg:gap-16">
         <div className="aspect-[3/4] overflow-hidden rounded-lg bg-neutral-100 relative">
           {product.image_url ? (
-            <img src={product.image_url} alt={product.title} className="w-full h-full object-cover" />
+            <img
+              src={product.image_url}
+              alt={product.title}
+              decoding="async"
+              width={600}
+              height={800}
+              className="w-full h-full object-cover"
+            />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-neutral-300">No image</div>
           )}

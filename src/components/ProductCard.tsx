@@ -35,6 +35,10 @@ export default function ProductCard({ product, onOrderNow }: { product: Product;
             <img
               src={product.image_url}
               alt={product.title}
+              loading="lazy"
+              decoding="async"
+              width={400}
+              height={533}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
           ) : (

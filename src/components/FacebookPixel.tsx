@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
+interface WindowWithFbq extends Window {
+  fbq?: (...args: unknown[]) => void;
+  _fbq?: unknown;
+}
+
 export default function FacebookPixel() {
   const location = useLocation();
   const [pixelId, setPixelId] = useState<string | null>(null);
@@ -19,7 +24,8 @@ export default function FacebookPixel() {
 
   useEffect(() => {
     if (!pixelId) return;
-    if ((window as any).fbq) return;
+    const win = window as unknown as WindowWithFbq;
+    if (win.fbq) return;
 
     const script = document.createElement('script');
     script.innerHTML = `
@@ -38,8 +44,9 @@ export default function FacebookPixel() {
   }, [pixelId]);
 
   useEffect(() => {
-    if ((window as any).fbq) {
-      (window as any).fbq('track', 'PageView');
+    const win = window as unknown as WindowWithFbq;
+    if (win.fbq) {
+      win.fbq('track', 'PageView');
     }
   }, [location.pathname]);
 

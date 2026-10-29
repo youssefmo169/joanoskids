@@ -29,7 +29,10 @@ export default function ProductsPage() {
 
   useEffect(() => {
     setLoading(true);
-    let query = supabase.from('products').select('*').order('created_at', { ascending: false });
+    let query = supabase
+      .from('products')
+      .select('id, title, price, compare_at_price, image_url, category, category_name, sizes, colors, featured')
+      .order('created_at', { ascending: false });
     if (categoryParam !== 'All') query = query.eq('category', categoryParam);
     query.then(({ data }) => {
       setProducts((data as Product[]) || []);
@@ -169,7 +172,17 @@ function QuickCheckoutModal({ product, onClose }: { product: Product; onClose: (
         <div className="p-6">
           <div className="flex gap-3 mb-4 pb-4 border-b border-neutral-100">
             <div className="w-16 h-20 rounded-lg overflow-hidden bg-neutral-100 flex-shrink-0">
-              {product.image_url && <img src={product.image_url} alt="" className="w-full h-full object-cover" />}
+              {product.image_url && (
+                <img
+                  src={product.image_url}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  width={64}
+                  height={80}
+                  className="w-full h-full object-cover"
+                />
+              )}
             </div>
             <div>
               <p className="text-sm font-semibold text-neutral-900">{product.title}</p>

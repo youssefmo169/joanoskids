@@ -30,9 +30,10 @@ export default function HomePage() {
       if (data) setCategories(data as Category[]);
     });
 
+    const cardFields = 'id, title, price, compare_at_price, image_url, category, category_name, sizes, colors, featured';
     supabase
       .from('products')
-      .select('*')
+      .select(cardFields)
       .eq('featured', true)
       .limit(8)
       .then(({ data }) => {
@@ -41,7 +42,7 @@ export default function HomePage() {
         } else {
           supabase
             .from('products')
-            .select('*')
+            .select(cardFields)
             .limit(8)
             .then(({ data: fallback }) => {
               if (fallback) setFeatured(fallback as Product[]);
@@ -54,7 +55,14 @@ export default function HomePage() {
     <div>
       {/* ── Hero ── */}
       <section className="relative h-[85vh] min-h-[600px] overflow-hidden">
-        <img src={heroImage} alt="Hero" className="absolute inset-0 w-full h-full object-cover" />
+        <img
+          src={heroImage}
+          alt="Hero"
+          decoding="async"
+          width={1920}
+          height={1080}
+          className="absolute inset-0 w-full h-full object-cover"
+        />
         <div className="absolute inset-0 bg-white/30" />
         <div className="relative h-full flex items-center">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
@@ -105,6 +113,10 @@ export default function HomePage() {
                     'https://images.pexels.com/photos/8474941/pexels-photo-8474941.jpeg?auto=compress&cs=tinysrgb&w=800'
                   }
                   alt={lang === 'ar' ? cat.name_ar : cat.name_en}
+                  loading="lazy"
+                  decoding="async"
+                  width={400}
+                  height={533}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/60 to-transparent" />
@@ -304,7 +316,15 @@ function QuickCheckoutModal({
           <div className="flex gap-3 pb-4 border-b border-neutral-100">
             <div className="w-16 h-20 rounded-lg overflow-hidden bg-neutral-100 flex-shrink-0">
               {product.image_url && (
-                <img src={product.image_url} alt="" className="w-full h-full object-cover" />
+                <img
+                  src={product.image_url}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  width={64}
+                  height={80}
+                  className="w-full h-full object-cover"
+                />
               )}
             </div>
             <div>
