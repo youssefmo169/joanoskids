@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npx vite build",
+    "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": "24.x"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
