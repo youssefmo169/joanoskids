@@ -1,8 +1,0 @@
-{
-  "name": "Jo & Anos Kids",
-  "description": "Premium Kids Clothing e-commerce store with product catalog, cart, checkout, multi-language support, and admin management.",
-  "permissions": [],
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
